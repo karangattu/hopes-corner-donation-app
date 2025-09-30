@@ -71,25 +71,36 @@ app_ui = ui.page_fluid(
                 "Item Name",
                 placeholder="Bread, Pastries, Apples"
             ),
+            ui.input_select(
+                "donation_type",
+                "Category",
+                choices=DONATION_TYPES
+            ),
             ui.row(
-                ui.column(
-                    6,
-                    ui.input_select(
-                        "donation_type",
-                        "Category",
-                        choices=DONATION_TYPES
-                    )
-                ),
                 ui.column(
                     6,
                     ui.input_numeric(
                         "weight_lbs",
                         "Weight (lbs)",
-                        value=0,
+                        value=None,
                         min=0,
                         step=0.01
                     )
+                ),
+                ui.column(
+                    6,
+                    ui.input_numeric(
+                        "trays",
+                        "Number of Trays",
+                        value=None,
+                        min=0,
+                        step=1
+                    )
                 )
+            ),
+            ui.p(
+                "Enter either Weight OR Number of Trays (not both)",
+                class_="text-muted small mb-0"
             ),
             ui.input_action_button(
                 "submit",
@@ -107,7 +118,19 @@ app_ui = ui.page_fluid(
                 icon_svg("chart-line", height="1.2rem", width="1.2rem"),
                 " Recent Donations"
             ),
-            ui.output_ui("recent_donations")
+            ui.div(
+                ui.input_action_button(
+                    "undo",
+                    ui.span(
+                        icon_svg("rotate-left", height="1rem", width="1rem"),
+                        " Undo Last Entry"
+                    ),
+                    class_="btn-warning btn-sm mb-3"
+                ),
+                class_="d-flex justify-content-end"
+            ),
+            ui.output_ui("recent_donations"),
+            ui.output_ui("undo_message")
         ),
         
         col_widths=[12, 12, 6, 6]
@@ -118,6 +141,7 @@ app_ui = ui.page_fluid(
 
 def server(input, output, session):
     submission_status = reactive.Value("")
+    undo_status = reactive.Value("")
     refresh_trigger = reactive.Value(0)
     
     def get_supabase_client() -> Client:
@@ -137,8 +161,26 @@ def server(input, output, session):
                 submission_status.set("error|Please enter an item name")
                 return
             
-            if input.weight_lbs() < 0:
+            weight = input.weight_lbs()
+            trays = input.trays()
+            
+            has_weight = weight is not None and weight > 0
+            has_trays = trays is not None and trays > 0
+            
+            if not has_weight and not has_trays:
+                submission_status.set("error|Please enter either Weight OR Number of Trays")
+                return
+            
+            if has_weight and has_trays:
+                submission_status.set("error|Please enter only Weight OR Trays, not both")
+                return
+            
+            if has_weight and weight < 0:
                 submission_status.set("error|Weight cannot be negative")
+                return
+            
+            if has_trays and trays < 0:
+                submission_status.set("error|Number of trays cannot be negative")
                 return
             
             supabase = get_supabase_client()
@@ -150,8 +192,8 @@ def server(input, output, session):
                 "donor": input.donor().strip(),
                 "item_name": input.item_name().strip(),
                 "donation_type": input.donation_type(),
-                "weight_lbs": float(input.weight_lbs()),
-                "trays": 0.0
+                "weight_lbs": float(weight) if has_weight else 0.0,
+                "trays": float(trays) if has_trays else 0.0
             }
             
             response = supabase.table("donations").insert(donation_data).execute()
@@ -160,13 +202,47 @@ def server(input, output, session):
                 submission_status.set("success|Donation recorded successfully!")
                 ui.update_text("donor", value="")
                 ui.update_text("item_name", value="")
-                ui.update_numeric("weight_lbs", value=0)
+                ui.update_numeric("weight_lbs", value=None)
+                ui.update_numeric("trays", value=None)
                 refresh_trigger.set(refresh_trigger.get() + 1)
             else:
                 submission_status.set("error|Failed to record donation")
                 
         except Exception as e:
             submission_status.set(f"error|Error: {str(e)}")
+    
+    @reactive.Effect
+    @reactive.event(input.undo)
+    def undo_last_donation():
+        try:
+            supabase = get_supabase_client()
+            if not supabase:
+                undo_status.set("error|Database connection not configured")
+                return
+            
+            response = supabase.table("donations").select("*").order(
+                "donated_at", desc=True
+            ).limit(1).execute()
+            
+            if not response.data:
+                undo_status.set("error|No donations to undo")
+                return
+            
+            last_donation = response.data[0]
+            delete_response = supabase.table("donations").delete().eq(
+                "id", last_donation['id']
+            ).execute()
+            
+            if delete_response:
+                donor_name = last_donation['donor']
+                item_name = last_donation['item_name']
+                undo_status.set(f"success|Undone: {donor_name} - {item_name}")
+                refresh_trigger.set(refresh_trigger.get() + 1)
+            else:
+                undo_status.set("error|Failed to undo donation")
+                
+        except Exception as e:
+            undo_status.set(f"error|Error: {str(e)}")
     
     @output
     @render.ui
@@ -197,6 +273,37 @@ def server(input, output, session):
                     role="alert"
                 ),
                 class_="mt-4"
+            )
+    
+    @output
+    @render.ui
+    def undo_message():
+        status = undo_status.get()
+        
+        if not status:
+            return ui.div()
+        
+        status_type, message = status.split("|", 1)
+        
+        if status_type == "success":
+            return ui.div(
+                ui.tags.div(
+                    icon_svg("circle-check", height="1rem", width="1rem"),
+                    ui.tags.span(message, style="margin-left: 8px;"),
+                    class_="alert alert-success alert-dismissible fade show",
+                    role="alert"
+                ),
+                class_="mt-3"
+            )
+        else:
+            return ui.div(
+                ui.tags.div(
+                    icon_svg("circle-xmark", height="1rem", width="1rem"),
+                    ui.tags.span(message, style="margin-left: 8px;"),
+                    class_="alert alert-warning alert-dismissible fade show",
+                    role="alert"
+                ),
+                class_="mt-3"
             )
     
     @output
@@ -243,6 +350,24 @@ def server(input, output, session):
                 }
                 badge_color = badge_colors.get(donation['donation_type'], "secondary")
                 
+                weight_lbs = donation.get('weight_lbs', 0) or 0
+                trays = donation.get('trays', 0) or 0
+                
+                if weight_lbs > 0:
+                    quantity_display = ui.tags.td(
+                        ui.tags.strong(f"{weight_lbs:.1f}"),
+                        " lbs"
+                    )
+                elif trays > 0:
+                    quantity_display = ui.tags.td(
+                        ui.tags.strong(f"{int(trays)}"),
+                        " trays"
+                    )
+                else:
+                    quantity_display = ui.tags.td(
+                        ui.tags.span("N/A", class_="text-muted")
+                    )
+                
                 rows.append(
                     ui.tags.tr(
                         ui.tags.td(ui.tags.strong(donation['donor'])),
@@ -253,10 +378,7 @@ def server(input, output, session):
                                 class_=f"badge bg-{badge_color}"
                             )
                         ),
-                        ui.tags.td(
-                            ui.tags.strong(f"{donation['weight_lbs']:.1f}"),
-                            " lbs"
-                        ),
+                        quantity_display,
                         ui.tags.td(
                             ui.div(formatted_date),
                             ui.div(f"{formatted_time} PT", class_="text-muted small")
@@ -270,7 +392,7 @@ def server(input, output, session):
                         ui.tags.th("Donor"),
                         ui.tags.th("Item"),
                         ui.tags.th("Category"),
-                        ui.tags.th("Weight"),
+                        ui.tags.th("Quantity"),
                         ui.tags.th("Date")
                     )
                 ),
