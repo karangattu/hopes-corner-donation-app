@@ -35,6 +35,10 @@ app_ui = ui.page_fluid(
             label {
                 font-weight: 700;
             }
+            .card-header {
+                font-size: 1.5rem;
+                font-weight: 700;
+            }
         """)
     ),
     
