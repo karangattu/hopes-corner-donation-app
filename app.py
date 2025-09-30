@@ -76,32 +76,14 @@ app_ui = ui.page_fluid(
                 "Category",
                 choices=DONATION_TYPES
             ),
-            ui.row(
-                ui.column(
-                    6,
-                    ui.input_numeric(
-                        "weight_lbs",
-                        "Weight (lbs)",
-                        value=None,
-                        min=0,
-                        step=0.01
-                    )
-                ),
-                ui.column(
-                    6,
-                    ui.input_numeric(
-                        "trays",
-                        "Number of Trays",
-                        value=None,
-                        min=0,
-                        step=1
-                    )
-                )
+            ui.input_radio_buttons(
+                "quantity_type",
+                "Measurement Type",
+                choices=["Weight", "Trays"],
+                selected="Weight",
+                inline=True
             ),
-            ui.p(
-                "Enter either Weight OR Number of Trays (not both)",
-                class_="text-muted small mb-0"
-            ),
+            ui.output_ui("quantity_input"),
             ui.input_action_button(
                 "submit",
                 ui.span(
@@ -143,11 +125,32 @@ def server(input, output, session):
     submission_status = reactive.Value("")
     undo_status = reactive.Value("")
     refresh_trigger = reactive.Value(0)
+    quantity_value = reactive.Value(None)
     
     def get_supabase_client() -> Client:
         if not SUPABASE_URL or not SUPABASE_KEY:
             return None
         return create_client(SUPABASE_URL, SUPABASE_KEY)
+    
+    @output
+    @render.ui
+    def quantity_input():
+        if input.quantity_type() == "Weight":
+            return ui.input_numeric(
+                "quantity_value",
+                "Weight (lbs)",
+                value=quantity_value.get(),
+                min=0,
+                step=0.01
+            )
+        else:
+            return ui.input_numeric(
+                "quantity_value",
+                "Number of Trays",
+                value=quantity_value.get(),
+                min=0,
+                step=1
+            )
     
     @reactive.Effect
     @reactive.event(input.submit)
@@ -161,26 +164,15 @@ def server(input, output, session):
                 submission_status.set("error|Please enter an item name")
                 return
             
-            weight = input.weight_lbs()
-            trays = input.trays()
+            value = input.quantity_value()
             
-            has_weight = weight is not None and weight > 0
-            has_trays = trays is not None and trays > 0
-            
-            if not has_weight and not has_trays:
-                submission_status.set("error|Please enter either Weight OR Number of Trays")
+            if value is None or value <= 0:
+                measurement = "weight" if input.quantity_type() == "Weight" else "number of trays"
+                submission_status.set(f"error|Please enter a valid {measurement}")
                 return
             
-            if has_weight and has_trays:
-                submission_status.set("error|Please enter only Weight OR Trays, not both")
-                return
-            
-            if has_weight and weight < 0:
-                submission_status.set("error|Weight cannot be negative")
-                return
-            
-            if has_trays and trays < 0:
-                submission_status.set("error|Number of trays cannot be negative")
+            if value < 0:
+                submission_status.set("error|Value cannot be negative")
                 return
             
             supabase = get_supabase_client()
@@ -188,12 +180,13 @@ def server(input, output, session):
                 submission_status.set("error|Database connection not configured. Please set SUPABASE_URL and SUPABASE_KEY in .env file")
                 return
             
+            is_weight = input.quantity_type() == "Weight"
             donation_data = {
                 "donor": input.donor().strip(),
                 "item_name": input.item_name().strip(),
                 "donation_type": input.donation_type(),
-                "weight_lbs": float(weight) if has_weight else 0.0,
-                "trays": float(trays) if has_trays else 0.0
+                "weight_lbs": float(value) if is_weight else 0.0,
+                "trays": float(value) if not is_weight else 0.0
             }
             
             response = supabase.table("donations").insert(donation_data).execute()
@@ -202,8 +195,7 @@ def server(input, output, session):
                 submission_status.set("success|Donation recorded successfully!")
                 ui.update_text("donor", value="")
                 ui.update_text("item_name", value="")
-                ui.update_numeric("weight_lbs", value=None)
-                ui.update_numeric("trays", value=None)
+                quantity_value.set(None)
                 refresh_trigger.set(refresh_trigger.get() + 1)
             else:
                 submission_status.set("error|Failed to record donation")
