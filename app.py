@@ -53,15 +53,17 @@ app_ui = ui.page_fluid(
                 icon_svg("pen-to-square", height="1.2rem", width="1.2rem"),
                 " Record New Donation"
             ),
-            ui.input_text(
+            ui.input_selectize(
                 "donor",
                 "Donor Name",
-                placeholder="Enter donor name"
+                choices=[],
+                options={"create": True, "placeholder": "Enter or select donor name"}
             ),
-            ui.input_text(
+            ui.input_selectize(
                 "item_name",
                 "Item Name",
-                placeholder="Bread, Pastries, Apples"
+                choices=[],
+                options={"create": True, "placeholder": "Enter or select item name"}
             ),
             ui.row(
                 ui.column(
@@ -118,6 +120,28 @@ def server(input, output, session):
         return create_client(SUPABASE_URL, SUPABASE_KEY)
     
     @reactive.Effect
+    def update_autocomplete_choices():
+        _ = refresh_trigger.get()
+        
+        supabase = get_supabase_client()
+        if not supabase:
+            return
+        
+        try:
+            donors_response = supabase.table("donations").select("donor").execute()
+            items_response = supabase.table("donations").select("item_name").execute()
+            
+            if donors_response.data:
+                unique_donors = sorted(set(d['donor'] for d in donors_response.data))
+                ui.update_selectize("donor", choices=unique_donors)
+            
+            if items_response.data:
+                unique_items = sorted(set(i['item_name'] for i in items_response.data))
+                ui.update_selectize("item_name", choices=unique_items)
+        except Exception:
+            pass
+    
+    @reactive.Effect
     @reactive.event(input.submit)
     def submit_donation():
         try:
@@ -150,8 +174,8 @@ def server(input, output, session):
             
             if response.data:
                 submission_status.set("success|Donation recorded successfully!")
-                ui.update_text("donor", value="")
-                ui.update_text("item_name", value="")
+                ui.update_selectize("donor", selected="")
+                ui.update_selectize("item_name", selected="")
                 ui.update_numeric("weight_lbs", value=0)
                 refresh_trigger.set(refresh_trigger.get() + 1)
             else:
