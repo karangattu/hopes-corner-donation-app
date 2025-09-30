@@ -43,8 +43,16 @@ app_ui = ui.page_fluid(
     ),
     
     ui.div(
-        ui.h1("Hope's Corner", class_="text-center mt-4 mb-2"),
-        ui.p("Donation Tracking System", class_="text-center text-muted mb-4"),
+        ui.tags.img(
+            src="https://images.squarespace-cdn.com/content/v1/5622cd82e4b0501d40689558/cdab4aef-0027-40b7-9737-e2f893586a6a/Hopes_Corner_Logo_Green.png?format=750w",
+            alt="Hope's Corner Logo",
+            style="max-width: 300px; height: auto; display: block; margin: 0 auto;"
+        ),
+        ui.h3(
+            "Donation Tracking System",
+            class_="text-center mb-4",
+            style="font-weight: 700; color: #2c5f2d; margin-top: 1rem;"
+        ),
     ),
     
     ui.layout_columns(
