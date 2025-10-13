@@ -142,13 +142,7 @@ def server(input, output, session):
         combos = quick_add_state.get()
 
         if not combos:
-            return ui.div(
-                ui.tags.small(
-                    "Quick add suggestions appear after you log donations.",
-                    class_="text-muted",
-                ),
-                class_="mt-3",
-            )
+            return ui.div()
 
         buttons = []
         for idx, combo in enumerate(combos):
@@ -160,14 +154,29 @@ def server(input, output, session):
                 ui.input_action_button(
                     f"quick_add_{idx}",
                     label,
-                    class_="btn-outline-secondary btn-sm me-2 mb-2",
+                    class_="btn-outline-primary btn-sm me-2 mb-2",
                 )
             )
 
         return ui.div(
-            ui.tags.small("Quick add recent items:", class_="text-muted d-block mb-2"),
+            ui.tags.div(
+                ui.tags.strong(
+                    icon_svg("bolt", height="1rem", width="1rem"),
+                    " Quick Add:",
+                    style="color: #2c5f2d; font-size: 1rem;",
+                ),
+                ui.tags.small(
+                    " Click to auto-fill donor, item & category",
+                    class_="text-muted ms-2",
+                ),
+                class_="mb-2",
+            ),
             ui.div(*buttons, class_="d-flex flex-wrap"),
-            class_="mt-3",
+            class_="p-3 mb-3",
+            style=(
+                "background-color: #f8f9fa; border-left: 4px solid #2c5f2d; "
+                "border-radius: 4px;"
+            ),
         )
 
     @reactive.Effect
