@@ -98,7 +98,14 @@ app_ui = ui.page_fluid(
             ui.output_ui("recent_donations"),
             ui.output_ui("undo_message"),
         ),
-        col_widths=[12, 12, 6, 6],
+        ui.card(
+            ui.card_header(
+                icon_svg("chart-bar", height="1.2rem", width="1.2rem"),
+                " Monthly Metrics",
+            ),
+            ui.output_ui("monthly_metrics"),
+        ),
+        col_widths=[12, 12, 6, 6, 6],
     ),
     theme=shinyswatch.theme.lux,
 )
@@ -512,6 +519,134 @@ def server(input, output, session):
                 ui.h5("Error Loading Data", class_="mt-3"),
                 ui.p(str(e), class_="text-danger small"),
                 class_="text-center py-5",
+            )
+
+    @output
+    @render.ui
+    def monthly_metrics():
+        _ = refresh_trigger.get()
+
+        try:
+            supabase = get_supabase_client()
+            if not supabase:
+                return ui.div(
+                    ui.p("Database not connected", class_="text-muted text-center"),
+                    class_="py-3",
+                )
+
+            now = datetime.now(PACIFIC_TZ)
+            first_day = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            first_day_utc = first_day.astimezone(ZoneInfo("UTC"))
+
+            response = (
+                supabase.table("donations")
+                .select("*")
+                .gte("donated_at", first_day_utc.isoformat())
+                .execute()
+            )
+
+            if not response.data:
+                return ui.div(
+                    ui.p(
+                        "No donations this month yet",
+                        class_="text-muted text-center",
+                    ),
+                    class_="py-3",
+                )
+
+            total_donations = len(response.data)
+            total_weight = sum(d.get("weight_lbs", 0) or 0 for d in response.data)
+            total_trays = sum(d.get("trays", 0) or 0 for d in response.data)
+            unique_donors = len(set(d["donor"] for d in response.data))
+
+            category_counts = {}
+            for donation in response.data:
+                cat = donation.get("donation_type", "Unknown")
+                category_counts[cat] = category_counts.get(cat, 0) + 1
+
+            month_name = now.strftime("%B %Y")
+
+            return ui.div(
+                ui.div(
+                    ui.h5(month_name, class_="text-center mb-4"),
+                    ui.div(
+                        ui.div(
+                            ui.div(
+                                icon_svg("box", height="2rem", width="2rem"),
+                                class_="text-primary mb-2",
+                            ),
+                            ui.h3(str(total_donations), class_="mb-0"),
+                            ui.p("Total Donations", class_="text-muted small mb-0"),
+                            class_="text-center p-3",
+                            style="background-color: #f8f9fa; border-radius: 8px;",
+                        ),
+                        ui.div(
+                            ui.div(
+                                icon_svg("users", height="2rem", width="2rem"),
+                                class_="text-success mb-2",
+                            ),
+                            ui.h3(str(unique_donors), class_="mb-0"),
+                            ui.p("Unique Donors", class_="text-muted small mb-0"),
+                            class_="text-center p-3",
+                            style="background-color: #f8f9fa; border-radius: 8px;",
+                        ),
+                        class_="row row-cols-2 g-3 mb-3",
+                    ),
+                    ui.div(
+                        ui.div(
+                            ui.div(
+                                icon_svg("weight-scale", height="2rem", width="2rem"),
+                                class_="text-warning mb-2",
+                            ),
+                            ui.h3(f"{total_weight:.1f}", class_="mb-0"),
+                            ui.p("Total lbs", class_="text-muted small mb-0"),
+                            class_="text-center p-3",
+                            style="background-color: #f8f9fa; border-radius: 8px;",
+                        ),
+                        ui.div(
+                            ui.div(
+                                icon_svg("layer-group", height="2rem", width="2rem"),
+                                class_="text-info mb-2",
+                            ),
+                            ui.h3(str(int(total_trays)), class_="mb-0"),
+                            ui.p("Total Trays", class_="text-muted small mb-0"),
+                            class_="text-center p-3",
+                            style="background-color: #f8f9fa; border-radius: 8px;",
+                        ),
+                        class_="row row-cols-2 g-3 mb-3",
+                    ),
+                    ui.div(
+                        ui.p(
+                            ui.tags.strong("By Category:"),
+                            class_="mb-2",
+                        ),
+                        *[
+                            ui.div(
+                                ui.span(cat, class_="me-2"),
+                                ui.span(
+                                    str(count),
+                                    class_="badge bg-secondary",
+                                ),
+                                class_="d-flex justify-content-between mb-2",
+                            )
+                            for cat, count in sorted(
+                                category_counts.items(),
+                                key=lambda x: x[1],
+                                reverse=True,
+                            )
+                        ],
+                        class_="mt-3",
+                    ),
+                )
+            )
+
+        except Exception as e:
+            return ui.div(
+                ui.p(
+                    f"Error loading metrics: {str(e)}",
+                    class_="text-danger small text-center",
+                ),
+                class_="py-3",
             )
 
 
