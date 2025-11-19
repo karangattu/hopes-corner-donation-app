@@ -70,6 +70,7 @@ app_ui = ui.page_fluid(
                 inline=True,
             ),
             ui.output_ui("quantity_input"),
+            ui.input_date("donation_date", "Date", value=datetime.now(PACIFIC_TZ).date()),
             ui.input_action_button(
                 "submit",
                 ui.span(
@@ -112,6 +113,10 @@ app_ui = ui.page_fluid(
 
 
 def server(input, output, session):
+    @reactive.Effect
+    def init_date():
+        ui.update_date("donation_date", value=datetime.now(PACIFIC_TZ).date())
+
     submission_status = reactive.Value("")
     undo_status = reactive.Value("")
     refresh_trigger = reactive.Value(0)
@@ -290,12 +295,23 @@ def server(input, output, session):
                 return
 
             is_weight = input.quantity_type() == "Weight"
+
+            input_date = input.donation_date()
+            now_pt = datetime.now(PACIFIC_TZ)
+
+            if input_date == now_pt.date():
+                donated_at = now_pt
+            else:
+                donated_at = datetime.combine(input_date, now_pt.time())
+                donated_at = donated_at.replace(tzinfo=PACIFIC_TZ)
+
             donation_data = {
                 "donor": input.donor().strip(),
                 "item_name": input.item_name().strip(),
                 "donation_type": input.donation_type(),
                 "weight_lbs": float(value) if is_weight else 0.0,
                 "trays": float(value) if not is_weight else 0.0,
+                "donated_at": donated_at.isoformat(),
             }
 
             response = supabase.table("donations").insert(donation_data).execute()
